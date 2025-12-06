@@ -1,6 +1,6 @@
 
 python-telegram-bot==20.5
-requests
+requests==2.32.0
 groq
 nest_asyncio
 flask==2.3.3
