@@ -3,3 +3,5 @@ python-telegram-bot==20.3
 requests
 groq
 nest_asyncio
+flask==2.3.3
+g unicorn==21.2.0
