@@ -1,46 +1,37 @@
-
 import os
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from groq import Groq
+from flask import Flask, request
+from telegram import Bot, Update
+from telegram.ext import Dispatcher, CommandHandler
 
-# Load keys from config.py
-from config import TELEGRAM_TOKEN, GROQ_API_KEY
+TOKEN = os.environ["BOT_TOKEN"]
+WEBHOOK_URL = os.environ["WEBHOOK_URL"]  # https://yourapp.onrender.com/webhook
 
-# Initialize Groq client
-client = Groq(api_key=GROQ_API_KEY)
+bot = Bot(TOKEN)
+app = Flask(__name__)
 
-async def start(update, context):
-    await update.message.reply_text(
-        "Your sniper is awake, locked in, and ready."
-    )
+dispatcher = Dispatcher(bot, None, workers=0)
 
-async def handle_message(update, context):
-    user_text = update.message.text
+# --- Commands ---
+def start(update, context):
+    update.message.reply_text("🔥 Black Lion Sniper Online, My Lord.")
 
-    try:
-        # GROQ LLM Request
-        response = client.chat.completions.create(
-            model="mixtral-8x7b-32768",
-            messages=[{"role": "user", "content": user_text}]
-        )
+dispatcher.add_handler(CommandHandler("start", start))
 
-        bot_reply = response.choices[0].message["content"]
-        await update.message.reply_text(bot_reply)
+# --- Webhook endpoint ---
+@app.post("/webhook")
+def webhook():
+    data = request.get_json(force=True)
+    update = Update.de_json(data, bot)
+    dispatcher.process_update(update)
+    return "OK", 200
 
-    except Exception as e:
-        await update.message.reply_text("System jammed. Check logs.")
-        print("Error:", e)
+# --- Root page ---
+@app.get("/")
+def home():
+    return "Black Lion Sniper Active"
 
-
-def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("Bot live. Sniper perched.")
-    app.run_polling()
-
-
+# --- Set Webhook once ---
 if __name__ == "__main__":
-    main()
+    bot.delete_webhook()
+    bot.set_webhook(url=WEBHOOK_URL)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
