@@ -1,12 +1,12 @@
-# 
+
 # main.py
 import asyncio
+import datetime
+import random
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from config import TELEGRAM_TOKEN, GROQ_API_KEY
-import datetime
-import random
 
 # --------------------------
 # Flask app
@@ -14,9 +14,16 @@ import random
 app = Flask(__name__)
 
 # --------------------------
+# Persistent event loop
+# --------------------------
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+# --------------------------
 # Telegram Bot Application
 # --------------------------
 bot_app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+loop.run_until_complete(bot_app.initialize())
 
 # --------------------------
 # Rate limiter (max 10 requests per 20 min)
@@ -33,10 +40,10 @@ def log_request():
     request_log.append(datetime.datetime.now().timestamp())
 
 # --------------------------
-# Lion Sniper Engine (Groq simulation)
+# Lion Sniper Engine (Groq signals)
 # --------------------------
 async def fetch_signal():
-    """Fetch Groq signal (fake simulation)."""
+    """Fetch Groq signal (simulated)."""
     direction = random.choice(["CALL", "PUT"])
     confidence = random.randint(75, 99)
     entry_time = (datetime.datetime.now() + datetime.timedelta(seconds=60)).strftime("%H:%M:%S")
@@ -109,8 +116,11 @@ def webhook():
     """Receive Telegram update via webhook."""
     data = request.get_json(force=True)
     update = Update.de_json(data, bot_app.bot)
-    # Use asyncio.run to process update synchronously in Flask
-    asyncio.run(bot_app.process_update(update))
+    # Schedule async processing on persistent loop
+    loop.call_soon_threadsafe(
+        asyncio.create_task,
+        bot_app.process_update(update)
+    )
     return "OK", 200
 
 # --------------------------
