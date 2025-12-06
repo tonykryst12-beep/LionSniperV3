@@ -1,4 +1,5 @@
-# main.py — FULL LION SNIPER BOT (Render-ready)
+
+# main.py — LION SNIPER BOT (Render-ready)
 import json
 import time
 import asyncio
@@ -8,7 +9,7 @@ from groq import Groq
 from telegram.ext import Application, CommandHandler
 from datetime import datetime, timedelta
 
-# Apply nest_asyncio to run inside Render's event loop
+# Apply nest_asyncio for Render
 nest_asyncio.apply()
 
 # ---------------------------
@@ -39,7 +40,6 @@ with open("groq_sniper_prompt.txt", "r") as f:
 
 # ---------------------------
 # FETCH QUOTEX MARKET CANDLES (Stub)
-# Replace with real API or scraping method
 # ---------------------------
 def fetch_quotex_market():
     return {
@@ -60,7 +60,6 @@ async def groq_decision(market_data):
             {"role": "user", "content": json.dumps(market_data)}
         ]
     }
-
     response = client.chat.completions.create(**payload)
     result = response.choices[0].message.content.strip().upper()
     return result
@@ -94,6 +93,7 @@ async def check_results():
     now = datetime.utcnow()
     for t in active_trades:
         if t["status"] == "pending" and now >= t["expiry"]:
+            # Fake result; later replace with Quotex checker
             t["status"] = "WIN" if time.time() % 2 else "LOSS"
 
 # ---------------------------
@@ -128,7 +128,7 @@ async def hunt(update, context):
     )
 
 # ---------------------------
-# MAIN BOT RUNNER (async fixed for Render)
+# MAIN BOT RUNNER
 # ---------------------------
 async def run_bot():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -138,6 +138,7 @@ async def run_bot():
 
     await app.initialize()
 
+    # Background trade tracker
     async def tracker():
         while True:
             await check_results()
@@ -145,9 +146,8 @@ async def run_bot():
 
     asyncio.create_task(tracker())
 
-    await app.start()
-    await app.updater.start_polling()
-    await app.updater.idle()
+    # Run polling (handles start & idle automatically)
+    await app.run_polling()
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
