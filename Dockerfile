@@ -1,18 +1,18 @@
-
-# Use Python image
+# Base image
 FROM python:3.10-slim
 
-# Create app directory
+# Set work directory
 WORKDIR /app
 
-# Copy requirements
+# Copy requirements and install
 COPY requirements.txt .
-
-# Install required python packages
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy project files
+# Copy app code
 COPY . .
 
-# Start bot
-CMD ["python", "main.py"]
+# Expose port (needed by Render)
+EXPOSE 10000
+
+# Start command to keep container alive
+CMD ["gunicorn", "--bind", "0.0.0.0:10000", "main:app"]
