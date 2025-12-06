@@ -4,4 +4,4 @@ requests
 groq
 nest_asyncio
 flask==2.3.3
-g unicorn==21.2.0
+gunicorn==21.2.0
