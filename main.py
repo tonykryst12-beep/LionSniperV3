@@ -1,110 +1,127 @@
-# main.py — Lion Sniper Bot V3 (Render + Telegram Webhook)
+# 
+# main.py
 import asyncio
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler
-
-# Import your keys from config.py
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from config import TELEGRAM_TOKEN, GROQ_API_KEY
+import datetime
+import random
 
-# -------------------- Setup --------------------
+# --------------------------
+# Flask app
+# --------------------------
 app = Flask(__name__)
 
-# Initialize Telegram Application (async)
-bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
+# --------------------------
+# Telegram Bot Application
+# --------------------------
+bot_app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-# Rate limiter
+# --------------------------
+# Rate limiter (max 10 requests per 20 min)
+# --------------------------
 request_log = []
+
 def can_execute():
-    from time import time
-    now = time()
+    now = datetime.datetime.now().timestamp()
     global request_log
-    request_log = [t for t in request_log if now - t < 20 * 60]
+    request_log = [t for t in request_log if now - t < 20*60]
     return len(request_log) < 10
 
 def log_request():
-    from time import time
-    request_log.append(time())
+    request_log.append(datetime.datetime.now().timestamp())
 
-# -------------------- Signal Logic --------------------
+# --------------------------
+# Lion Sniper Engine (Groq simulation)
+# --------------------------
 async def fetch_signal():
-    """Fetch Groq/Quotex signal (mock or real analysis)."""
-    import random, datetime
-    return {
-        "direction": "CALL" if random.random() > 0.5 else "PUT",
-        "confidence": 75 + random.randint(0, 20),
-        "entryTime": (datetime.datetime.utcnow() + datetime.timedelta(seconds=60)).isoformat()
-    }
+    """Fetch Groq signal (fake simulation)."""
+    direction = random.choice(["CALL", "PUT"])
+    confidence = random.randint(75, 99)
+    entry_time = (datetime.datetime.now() + datetime.timedelta(seconds=60)).strftime("%H:%M:%S")
+    return {"direction": direction, "confidence": confidence, "entry_time": entry_time}
 
 async def verify_signal(signal):
-    """God mode confidence recheck."""
-    second_check = signal["confidence"] - 3 + (random.randint(0, 5))
-    signal["finalConfidence"] = min(100, (signal["confidence"] + second_check)//2)
+    """God Mode recheck before sending."""
+    second_check = signal["confidence"] - 3 + random.randint(0,5)
+    final_conf = min(100, (signal["confidence"] + second_check)//2)
+    signal["final_confidence"] = final_conf
     return signal
 
 def lion_mode(signal):
-    """Lion mode filter."""
-    if signal["finalConfidence"] < 85:
-        return False, "🦁 The lion refuses this weak trade. Wait a bit, hunter."
-    return True, None
+    if signal["final_confidence"] < 85:
+        return False, "🦁 Lion refuses weak trade. Wait a bit."
+    return True, ""
 
 active_trades = []
+
 def register_trade(signal):
-    import time
+    """Track trades for result reporting."""
     active_trades.append({
         **signal,
         "status": "pending",
-        "checkTime": time.time() + 5*60
+        "check_time": datetime.datetime.now() + datetime.timedelta(minutes=5)
     })
 
 async def check_trade_results():
-    import time, random
-    now = time.time()
+    now = datetime.datetime.now()
     for t in active_trades:
-        if t["status"] == "pending" and now >= t["checkTime"]:
+        if t["status"] == "pending" and now >= t["check_time"]:
             t["status"] = "WIN" if random.random() > 0.4 else "LOSS"
 
-async def process_signal():
+# --------------------------
+# Telegram Commands
+# --------------------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🦁 Lion Sniper V3 ready. Type /scan to get a signal.")
+
+async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not can_execute():
-        return "⛔ Slow down, My Lord. Lion only hunts 10 times every 20 minutes."
+        await update.message.reply_text("⛔ Slow down, My Lord. Max 10 scans every 20 minutes.")
+        return
     log_request()
-    sig = await fetch_signal()
-    sig = await verify_signal(sig)
-    passed, msg = lion_mode(sig)
+
+    signal = await fetch_signal()
+    signal = await verify_signal(signal)
+    passed, msg = lion_mode(signal)
     if not passed:
-        return msg
-    register_trade(sig)
-    return f"""🦁 LION MODE SIGNAL
-Direction: {sig['direction']}
-Entry Time: {sig['entryTime']}
-Confidence: {sig['finalConfidence']}%
+        await update.message.reply_text(msg)
+        return
 
-Move with the heart of a lion, My Lord."""
-
-# -------------------- Telegram Handlers --------------------
-async def start(update: Update, context):
-    await update.message.reply_text("🦁 Lion Sniper Bot Active. Send /signal to hunt.")
-
-async def signal(update: Update, context):
-    result = await process_signal()
-    await update.message.reply_text(result)
+    register_trade(signal)
+    await update.message.reply_text(
+        f"🦁 LION MODE SIGNAL\n"
+        f"Direction: {signal['direction']}\n"
+        f"Entry Time: {signal['entry_time']}\n"
+        f"Confidence: {signal['final_confidence']}%\n"
+        f"Move with the heart of a lion, My Lord."
+    )
 
 bot_app.add_handler(CommandHandler("start", start))
-bot_app.add_handler(CommandHandler("signal", signal))
+bot_app.add_handler(CommandHandler("scan", scan))
 
-# -------------------- Flask Webhook --------------------
+# --------------------------
+# Flask Webhook Route
+# --------------------------
 @app.route("/", methods=["POST"])
 def webhook():
-    """Receive Telegram update via webhook and process immediately."""
+    """Receive Telegram update via webhook."""
     data = request.get_json(force=True)
     update = Update.de_json(data, bot_app.bot)
-    asyncio.create_task(bot_app.process_update(update))
+    # Use asyncio.run to process update synchronously in Flask
+    asyncio.run(bot_app.process_update(update))
     return "OK", 200
 
+# --------------------------
+# Keep alive for Render
+# --------------------------
 @app.route("/", methods=["GET"])
 def index():
-    return "Lion Sniper Bot V3 Active", 200
+    return "Lion Sniper V3 is online 🦁", 200
 
-# -------------------- Run Flask --------------------
+# --------------------------
+# Start Flask app
+# --------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
