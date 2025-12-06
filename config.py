@@ -1,10 +1,10 @@
 # config.py — Insert your keys here
 
 
-TELEGRAM_TOKEN = 8177309971:AAFaT0dwVytYhGLr_NJqpRhzmH2nv8EEY54
+TELEGRAM_TOKEN ="8177309971:AAFaT0dwVytYhGLr_NJqpRhzmH2nv8EEY54"
 
 
-GROQ_API_KEY = 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
+GROQ_API_KEY ="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"
 
 
 MAX_REQUESTS = 10
