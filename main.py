@@ -1,4 +1,6 @@
+import os
 
+PORT = int(os.environ.get("PORT", 8000))  # Render sets $PORT automatically
 # main.py — LION SNIPER BOT (Render-ready)
 import json
 import time
@@ -152,3 +154,12 @@ async def run_bot():
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(run_bot())
+    import threading
+from http.server import SimpleHTTPRequestHandler, HTTPServer
+
+def start_dummy_server():
+    server = HTTPServer(("0.0.0.0", PORT), SimpleHTTPRequestHandler)
+    print(f"🦁 Dummy server running on port {PORT} (keeps Render awake)")
+    server.serve_forever()
+
+threading.Thread(target=start_dummy_server, daemon=True).start()
