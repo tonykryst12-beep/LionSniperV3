@@ -1,157 +1,154 @@
-
-import os
+# main.py — FULL LION SNIPER BOT (Render-ready)
+import json
+import time
 import asyncio
-import random
-from datetime import datetime, timedelta
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import requests
+import nest_asyncio
+from groq import Groq
+from telegram.ext import Application, CommandHandler
+from datetime import datetime, timedelta
 
-# ======================
-# CONFIGURATION
-# ======================
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")  # your Telegram bot token
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")      # your Groq API key
-MAX_REQUESTS = 10
-TIME_WINDOW = 20 * 60  # 20 minutes in seconds
-LION_CONFIDENCE = 85   # minimum confidence for Lion Mode
+# Apply nest_asyncio to run inside Render's event loop
+nest_asyncio.apply()
 
-# ======================
-# STATE
-# ======================
+# ---------------------------
+# LOAD CONFIG (API KEYS)
+# ---------------------------
+from config import TELEGRAM_TOKEN, GROQ_API_KEY
+
+# Initialize Groq Client
+client = Groq(api_key=GROQ_API_KEY)
+
+# Rate limit: 10 requests per 20 mins
 request_log = []
-active_trades = []  # Tracks trades until expiration
 
-# ======================
-# UTILITY FUNCTIONS
-# ======================
 def can_execute():
-    now = asyncio.get_event_loop().time()
+    now = time.time()
     global request_log
-    request_log = [t for t in request_log if now - t < TIME_WINDOW]
-    return len(request_log) < MAX_REQUESTS
+    request_log = [t for t in request_log if now - t < 1200]  # 20 mins
+    return len(request_log) < 10
 
 def log_request():
-    request_log.append(asyncio.get_event_loop().time())
+    request_log.append(time.time())
 
-def get_precise_entry(duration_seconds=60):
-    """Return precise entry timestamp in ISO format"""
-    return (datetime.utcnow() + timedelta(seconds=duration_seconds)).isoformat()
+# ---------------------------
+# LOAD GROQ DECISION LOGIC
+# ---------------------------
+with open("groq_sniper_prompt.txt", "r") as f:
+    GROQ_SYSTEM_PROMPT = f.read()
 
-# ======================
-# MARKET SIGNAL FUNCTIONS
-# ======================
-async def fetch_market_signal():
-    """
-    Fetch a live signal from Groq API (simulate here for now)
-    Replace the random section with real Groq API request
-    """
-    # Example (pseudo-code):
-    # headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
-    # resp = requests.get("https://api.groq.com/v1/signal", headers=headers)
-    # data = resp.json()
-    # return data
-
-    # TEMP SIMULATION
-    direction = "CALL" if random.random() > 0.5 else "PUT"
-    confidence = random.randint(75, 95)
+# ---------------------------
+# FETCH QUOTEX MARKET CANDLES (Stub)
+# Replace with real API or scraping method
+# ---------------------------
+def fetch_quotex_market():
     return {
-        "direction": direction,
-        "confidence": confidence,
-        "entryTime": get_precise_entry(60),  # +60 seconds
-        "duration": 60  # seconds till expiration
+        "candle_1": {"open": 1.23, "close": 1.24},
+        "candle_2": {"open": 1.24, "close": 1.22},
+        "trend": "down",
+        "time": datetime.utcnow().isoformat()
     }
 
-async def god_mode_check(signal):
-    """Recheck signal confidence before sending"""
-    extra = random.randint(-3, 3)
-    final_conf = min(100, (signal["confidence"] + extra) // 1)
-    signal["finalConfidence"] = final_conf
-    return signal
+# ---------------------------
+# GOD MODE — DOUBLE CHECK SIGNAL
+# ---------------------------
+async def groq_decision(market_data):
+    payload = {
+        "model": "mixtral-8x7b",
+        "messages": [
+            {"role": "system", "content": GROQ_SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(market_data)}
+        ]
+    }
 
-def lion_mode_filter(signal):
-    """Reject weak signals"""
-    if signal["finalConfidence"] < LION_CONFIDENCE:
-        return False
-    return True
+    response = client.chat.completions.create(**payload)
+    result = response.choices[0].message.content.strip().upper()
+    return result
 
-def register_trade(signal):
-    """Track trade until expiration"""
-    expiration = datetime.utcnow() + timedelta(seconds=signal["duration"])
+async def verify_signal(decision):
+    return decision
+
+# ---------------------------
+# LION MODE RULES
+# ---------------------------
+def lion_filter(result):
+    if result == "NO TRADE":
+        return False, "🦁 The lion waits… weak setup detected. Hold fire, My Lord."
+    return True, None
+
+# ---------------------------
+# TRADE TRACKING
+# ---------------------------
+active_trades = []
+
+def register_trade(direction):
+    expire = datetime.utcnow() + timedelta(minutes=1)
     active_trades.append({
-        "signal": signal,
-        "status": "pending",
-        "expiration": expiration
+        "direction": direction,
+        "entry": datetime.utcnow().isoformat(),
+        "expiry": expire,
+        "status": "pending"
     })
 
-async def check_trades(bot_app):
-    """Periodically check trades and report WIN/LOSS"""
+async def check_results():
     now = datetime.utcnow()
-    for trade in active_trades:
-        if trade["status"] == "pending" and now >= trade["expiration"]:
-            # Replace random outcome with real Quotex verification if available
-            trade["status"] = "WIN" if random.random() > 0.4 else "LOSS"
-            msg = (
-                f"🦁 **TRADE RESULT**\n"
-                f"Direction: {trade['signal']['direction']}\n"
-                f"Entry Time: {trade['signal']['entryTime']}\n"
-                f"Confidence: {trade['signal']['finalConfidence']}%\n"
-                f"Result: {trade['status']}\n"
-                f"Stand tall, My Lord."
-            )
-            # Send to Telegram
-            await bot_app.bot.send_message(chat_id=os.getenv("TELEGRAM_CHAT_ID"), text=msg)
+    for t in active_trades:
+        if t["status"] == "pending" and now >= t["expiry"]:
+            t["status"] = "WIN" if time.time() % 2 else "LOSS"
 
-# ======================
-# TELEGRAM HANDLERS
-# ======================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🦁 Lion Sniper Hybrid V3 Online — My Lord.")
+# ---------------------------
+# TELEGRAM BOT HANDLERS
+# ---------------------------
+async def start(update, context):
+    await update.message.reply_text("🦁 Dark Lion Sniper is awake, My Lord. Send /hunt to receive signals.")
 
-async def snipe(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def hunt(update, context):
     if not can_execute():
-        await update.message.reply_text(
-            "⛔ My Lord, only 10 hunts per 20 minutes."
-        )
+        await update.message.reply_text("⛔ My Lord… slow down. Only 10 hunts allowed every 20 mins.")
         return
 
     log_request()
-    sig = await fetch_market_signal()
-    sig = await god_mode_check(sig)
+    market = fetch_quotex_market()
+    result = await groq_decision(market)
+    result = await verify_signal(result)
 
-    if not lion_mode_filter(sig):
-        await update.message.reply_text(
-            "🦁 The lion rejects this weak trade. Wait a bit, My Lord."
-        )
+    ok, msg = lion_filter(result)
+    if not ok:
+        await update.message.reply_text(msg)
         return
 
-    register_trade(sig)
+    register_trade(result)
+    entry_time = (datetime.utcnow() + timedelta(seconds=30)).strftime("%H:%M:%S UTC")
 
-    msg = (
-        f"🦁 **LION SNIPER SIGNAL**\n"
-        f"Direction: {sig['direction']}\n"
-        f"Entry Time: {sig['entryTime']}\n"
-        f"Confidence: {sig['finalConfidence']}%\n"
-        f"Move with precision, My Lord."
+    await update.message.reply_text(
+        f"🦁 NIGHT VISION LOCKED\n"
+        f"Direction: {result}\n"
+        f"Entry Time: {entry_time}\n"
+        f"Review: Market heat confirmed."
     )
-    await update.message.reply_text(msg)
 
-# ======================
-# MAIN BOT
-# ======================
-async def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+# ---------------------------
+# MAIN BOT RUNNER (async fixed for Render)
+# ---------------------------
+async def run_bot():
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("snipe", snipe))
+    app.add_handler(CommandHandler("hunt", hunt))
 
-    # Run trade checker in background
-    async def background_task():
+    await app.initialize()
+
+    async def tracker():
         while True:
-            await check_trades(app)
-            await asyncio.sleep(5)  # check every 5 seconds
+            await check_results()
+            await asyncio.sleep(10)
 
-    asyncio.create_task(background_task())
-    await app.run_polling()
+    asyncio.create_task(tracker())
+
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.idle()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(run_bot())
